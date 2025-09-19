@@ -1,0 +1,13 @@
+{
+  "name": "collaborative-editor-frontend",
+  "version": "1.0.0",
+  "description": "Real-time collaborative code editor frontend",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python3 -m http.server 3000",
+    "serve": "python3 -m http.server 3000"
+  },
+  "keywords": ["collaborative", "editor", "websocket"],
+  "author": "",
+  "license": "MIT"
+}
