@@ -1,0 +1,3 @@
+This is my small personal project. I want to build a very simple real time collaborative code editor similar to google docs, overleaf and other online collaborative editor you know. In such a way, I can learn about distributed system, microservice, networking... everything a fullstack engineer need to learn. 
+To speed up the development, I will use claude AI, ChatGPT, Copilot and other AI tool. I find AI coding to be very helpful but bugful most of the time. I will learn why AI give me the code and ask them explaining the code and structure for me.
+Hopefully, I will not give up on this one. ;)
