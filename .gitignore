@@ -1,0 +1,214 @@
+# Root .gitignore for Collaborative Code Editor Project
+
+# ==================== OS Files ====================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ==================== IDE & Editors ====================
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+*.code-workspace
+.history/
+
+# JetBrains (GoLand, WebStorm)
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+Session.vim
+Sessionx.vim
+.netrwhist
+tags
+[._]*.un~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# ==================== Project Specific ====================
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+!.env.example
+
+# Certificates & Keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+
+# ==================== Docker ====================
+# Docker project files
+.docker/
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ==================== Terraform ====================
+# Terraform directories
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# ==================== Coverage & Testing ====================
+coverage/
+*.cover
+*.coverage
+coverage.xml
+coverage.html
+coverage.out
+.nyc_output/
+test-results/
+junit.xml
+
+# ==================== Documentation ====================
+# Generated documentation
+docs/_build/
+docs/_site/
+site/
+
+# ==================== Temporary Files ====================
+tmp/
+temp/
+.tmp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.swo
+
+# ==================== Archive Files ====================
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.rar
+*.7z
+
+# ==================== Database ====================
+*.sqlite
+*.sqlite3
+*.db
+data/
+
+# ==================== Monitoring ====================
+# Prometheus
+prometheus_data/
+
+# Grafana
+grafana_data/
+
+# ==================== Additional ====================
+# Core dumps
+core
+vgcore.*
+core.*
+
+# Benchmarks
+*.bench
+benchmarks/results/
+
+# Profiling
+*.prof
+*.pprof
+cpu.out
+mem.out
+
+# Generated files
+generated/
+gen/
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Local scripts
+local-scripts/
+*.local.sh
+
+# Sensitive configurations
+*-secret.yaml
+*-secret.yml
+secrets/

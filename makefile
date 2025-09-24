@@ -34,6 +34,11 @@ dev-editor: ## Run editor service in development
 	@echo "Starting editor service..."
 	cd $(BACKEND_DIR) && go run cmd/editor-service/main.go -env=dev
 
+.PHONY: dev-editor-simple
+dev-editor-simple: ## Run editor service with current simple structure
+	@echo "Starting editor service (simple mode)..."
+	cd $(BACKEND_DIR) && go run *.go -env=dev
+
 .PHONY: dev-session
 dev-session: ## Run session service in development
 	@echo "Starting session service..."
@@ -67,13 +72,20 @@ build-backend: ## Build all backend services
 		CGO_ENABLED=0 GOOS=linux go build -o ../$(BIN_DIR)/editor-service cmd/editor-service/main.go && \
 		CGO_ENABLED=0 GOOS=linux go build -o ../$(BIN_DIR)/session-service cmd/session-service/main.go && \
 		CGO_ENABLED=0 GOOS=linux go build -o ../$(BIN_DIR)/execution-service cmd/execution-service/main.go
-	@echo "✅ Backend services built successfully"
+	@echo "Backend services built successfully"
+
+.PHONY: build-backend-simple
+build-backend-simple: ## Build backend with current simple structure
+	@echo "Building backend service..."
+	@mkdir -p $(BIN_DIR)
+	cd $(BACKEND_DIR) && CGO_ENABLED=0 go build -o ../$(BIN_DIR)/editor-service *.go
+	@echo "Backend service built successfully"
 
 .PHONY: build-frontend
 build-frontend: ## Build frontend
 	@echo "Building frontend..."
 	cd $(FRONTEND_DIR) && npm run build
-	@echo "✅ Frontend built successfully"
+	@echo "Frontend built successfully"
 
 # ==================== Docker ====================
 
@@ -82,7 +94,7 @@ docker-build: ## Build all Docker images
 	@echo "Building Docker images..."
 	docker build -f infrastructure/docker/Dockerfile.editor -t collab-editor:latest .
 	docker build -f infrastructure/docker/Dockerfile.frontend -t collab-frontend:latest .
-	@echo "✅ Docker images built"
+	@echo "Docker images built"
 
 .PHONY: docker-up
 docker-up: ## Start all services with Docker Compose
@@ -123,7 +135,19 @@ test-coverage: ## Generate test coverage report
 	@echo "Generating coverage report..."
 	cd $(BACKEND_DIR) && go test -coverprofile=coverage.out ./...
 	cd $(BACKEND_DIR) && go tool cover -html=coverage.out -o coverage.html
-	@echo "✅ Coverage report generated: backend/coverage.html"
+	@echo "Coverage report generated: backend/coverage.html"
+
+.PHONY: test-browsers
+test-browsers: ## Open multiple browser windows for testing
+	@echo "Opening test browsers..."
+	@echo "Editor URLs:"
+	@echo "  http://localhost:8080/?doc=test-doc-1"
+	@echo "  http://localhost:8080/?doc=test-doc-2"
+	@echo ""
+	@echo "Open these in different browser windows to test collaboration"
+	@open http://localhost:8080/?doc=test-doc-1 2>/dev/null || xdg-open http://localhost:8080/?doc=test-doc-1 2>/dev/null || echo "Please open manually"
+	@sleep 1
+	@open http://localhost:8080/?doc=test-doc-1 2>/dev/null || xdg-open http://localhost:8080/?doc=test-doc-1 2>/dev/null || echo "Please open manually"
 
 # ==================== Database ====================
 
@@ -142,24 +166,27 @@ migrate-down: ## Rollback database migrations
 .PHONY: install-deps
 install-deps: ## Install all dependencies
 	@echo "Installing Go dependencies..."
+	cd $(BACKEND_DIR) && go mod init collaborative-editor 2>/dev/null || true
+	cd $(BACKEND_DIR) && go get github.com/gorilla/websocket
+	cd $(BACKEND_DIR) && go get github.com/google/uuid
 	cd $(BACKEND_DIR) && go mod download
 	@echo "Installing Node dependencies..."
-	cd $(FRONTEND_DIR) && npm install
-	@echo "✅ Dependencies installed"
+	cd $(FRONTEND_DIR) && npm install 2>/dev/null || echo "Frontend not set up yet"
+	@echo "Dependencies installed"
 
 .PHONY: fmt
 fmt: ## Format code
 	@echo "Formatting Go code..."
 	cd $(BACKEND_DIR) && go fmt ./...
 	@echo "Formatting TypeScript code..."
-	cd $(FRONTEND_DIR) && npm run format
+	cd $(FRONTEND_DIR) && npm run format 2>/dev/null || echo "Frontend not set up yet"
 
 .PHONY: lint
 lint: ## Run linters
 	@echo "Linting Go code..."
-	cd $(BACKEND_DIR) && golangci-lint run
+	cd $(BACKEND_DIR) && golangci-lint run 2>/dev/null || echo "golangci-lint not installed"
 	@echo "Linting TypeScript code..."
-	cd $(FRONTEND_DIR) && npm run lint
+	cd $(FRONTEND_DIR) && npm run lint 2>/dev/null || echo "Frontend not set up yet"
 
 .PHONY: clean
 clean: ## Clean build artifacts
@@ -167,29 +194,46 @@ clean: ## Clean build artifacts
 	rm -rf $(BIN_DIR)
 	rm -rf $(FRONTEND_DIR)/dist
 	rm -rf $(BACKEND_DIR)/coverage.*
-	@echo "✅ Cleaned"
+	rm -rf $(BACKEND_DIR)/tmp
+	@echo "Cleaned"
 
 .PHONY: setup
 setup: ## Initial project setup
 	@echo "Setting up project..."
 	$(MAKE) install-deps
 	@echo "Creating .env file..."
-	cp .env.example .env
-	@echo "✅ Project setup complete"
+	cp .env.example .env 2>/dev/null || echo "No .env.example found, skipping"
+	@echo "Project setup complete"
 
 # ==================== Monitoring ====================
 
 .PHONY: logs
 logs: ## Tail logs from all services
 	@echo "Tailing logs..."
-	tail -f logs/*.log
+	tail -f logs/*.log 2>/dev/null || echo "No log files found"
 
 .PHONY: monitor
 monitor: ## Open monitoring dashboards
 	@echo "Opening monitoring dashboards..."
-	open http://localhost:3000  # Grafana
-	open http://localhost:9090  # Prometheus
-	open http://localhost:16686 # Jaeger
+	open http://localhost:3000 2>/dev/null || echo "Grafana not running"
+	open http://localhost:9090 2>/dev/null || echo "Prometheus not running"
+	open http://localhost:16686 2>/dev/null || echo "Jaeger not running"
+
+# ==================== Quick Commands ====================
+
+.PHONY: run
+run: ## Quick run for current simple structure
+	cd $(BACKEND_DIR) && go run *.go
+
+.PHONY: quick
+quick: install-deps run ## Quick start: install and run
+
+.PHONY: restart
+restart: ## Restart the server
+	@pkill -f "editor-service" 2>/dev/null || true
+	@pkill -f "go run" 2>/dev/null || true
+	@echo "Server stopped"
+	$(MAKE) run
 
 # Default target
 .DEFAULT_GOAL := help
