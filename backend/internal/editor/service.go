@@ -161,11 +161,21 @@ func (s *Service) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.metrics.ActiveConnections++
 	s.metrics.mu.Unlock()
 
+	initMsg := Message{
+		Type:     "init",
+		ClientID: client.id,
+	}
+	initData, _ := json.Marshal(initMsg)
+
 	// Start client goroutines
 	go client.writePump()
 	go client.readPump()
+	client.send <- initData
 
-	// Send initial document state
+	// Then register with hub
+	s.hub.register <- client
+
+	// Then send document state
 	s.sendDocumentState(client, docID)
 
 	log.Printf("Client %s connected for document %s", client.id, docID)

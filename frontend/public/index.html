@@ -1,166 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Collaborative Editor</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .status {
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 5px;
-        }
-
-        .status.connected {
-            background-color: #4CAF50;
-            color: white;
-        }
-
-        .status.disconnected {
-            background-color: #f44336;
-            color: white;
-        }
-
-        #editor {
-            width: 100%;
-            height: 400px;
-            font-family: monospace;
-            font-size: 14px;
-            border: 1px solid #ddd;
-            padding: 10px;
-        }
-
-        .info {
-            margin-top: 10px;
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-radius: 5px;
-        }
-    </style>
+    <title>Collaborative Code Editor</title>
+    <link rel="stylesheet" href="css/styles.css">
 </head>
+
 <body>
-    <h1>Real-Time Collaborative Editor</h1>
-    <div id="status" class="status disconnected">Connecting...</div>
-    <div class="info">
-        <strong>Document ID:</strong> <span id="docId"></span> |
-        <strong>Client ID:</strong> <span id="clientId">...</span>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1 class="title">Collaborative Code Editor</h1>
+            <div class="connection-status">
+                <div class="status-dot disconnected" id="statusDot"></div>
+                <span class="status-text" id="statusText">Connecting...</span>
+            </div>
+        </div>
+
+        <!-- Info Bar -->
+        <div class="info-bar">
+            <div class="document-info">
+                <div class="info-item">
+                    <span class="info-label">Document:</span>
+                    <span id="docId">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Your ID:</span>
+                    <span id="clientId">...</span>
+                </div>
+            </div>
+            <div class="users-container">
+                <div class="active-users" id="activeUsers"></div>
+                <div class="user-count" id="userCount">1 user online</div>
+            </div>
+        </div>
+
+        <!-- Editor -->
+        <div class="editor-container">
+            <textarea id="editor" placeholder="Start typing to collaborate..."></textarea>
+        </div>
+
+        <!-- Typing Indicators -->
+        <div class="typing-indicators" id="typingIndicators"></div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div>Press Ctrl+S to save</div>
+            <div id="lastSaved">Not saved yet</div>
+        </div>
     </div>
-    <textarea id="editor" placeholder="Start typing..."></textarea>
-    <div class="info">
-        Open this same URL in another browser window to test collaboration!
-    </div>
 
-    <script>
-        // Get document ID from URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const docId = urlParams.get('doc') || 'default-doc';
-        document.getElementById('docId').textContent = docId;
+    <!-- Notification -->
+    <div class="notification" id="notification"></div>
 
-        // FIXED: Include the doc parameter in WebSocket URL
-        const wsUrl = 'ws://localhost:8080/ws?doc=' + docId;
-
-        console.log('Connecting to WebSocket:', wsUrl);
-
-        let ws;
-        let clientId = null;
-        let isUpdatingFromRemote = false;
-
-        const editor = document.getElementById('editor');
-        const statusDiv = document.getElementById('status');
-        const clientIdSpan = document.getElementById('clientId');
-
-        function connect() {
-            ws = new WebSocket(wsUrl);
-
-            ws.onopen = () => {
-                console.log('WebSocket connected');
-                statusDiv.textContent = 'Connected';
-                statusDiv.className = 'status connected';
-            };
-
-            ws.onmessage = (event) => {
-                console.log('Received message:', event.data);
-                try {
-                    const msg = JSON.parse(event.data);
-
-                    switch(msg.type) {
-                        case 'init':
-                            clientId = msg.clientId;
-                            clientIdSpan.textContent = clientId;
-                            break;
-
-                        case 'document_state':
-                            isUpdatingFromRemote = true;
-                            editor.value = msg.content || '';
-                            isUpdatingFromRemote = false;
-                            break;
-
-                        case 'text_update':
-                            if (msg.clientId !== clientId) {
-                                isUpdatingFromRemote = true;
-                                editor.value = msg.content;
-                                isUpdatingFromRemote = false;
-                            }
-                            break;
-
-                        case 'user_joined':
-                            console.log('User joined:', msg.clientId);
-                            break;
-
-                        case 'user_left':
-                            console.log('User left:', msg.clientId);
-                            break;
-                    }
-                } catch (e) {
-                    console.error('Error parsing message:', e);
-                }
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                statusDiv.textContent = 'Connection error';
-                statusDiv.className = 'status disconnected';
-            };
-
-            ws.onclose = () => {
-                console.log('WebSocket disconnected');
-                statusDiv.textContent = 'Disconnected - Reconnecting...';
-                statusDiv.className = 'status disconnected';
-
-                // Reconnect after 2 seconds
-                setTimeout(connect, 2000);
-            };
-        }
-
-        // Send updates when typing
-        let typingTimer;
-        editor.addEventListener('input', () => {
-            if (isUpdatingFromRemote) return;
-
-            clearTimeout(typingTimer);
-            typingTimer = setTimeout(() => {
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    const message = {
-                        type: 'text_update',
-                        content: editor.value,
-                        clientId: clientId,
-                        documentId: docId
-                    };
-                    console.log('Sending:', message);
-                    ws.send(JSON.stringify(message));
-                }
-            }, 100);
-        });
-
-        // Start connection
-        connect();
-    </script>
+    <!-- JavaScript -->
+    <script src="js/editor.js"></script>
 </body>
+
 </html>

@@ -121,11 +121,11 @@ func (c *Client) writePump() {
 			w.Write(message)
 
 			// Add queued messages to the current websocket message
-			n := len(c.send)
-			for i := 0; i < n; i++ {
-				w.Write(newline)
-				w.Write(<-c.send)
-			}
+			// n := len(c.send)
+			// for i := 0; i < n; i++ {
+			// 	w.Write(newline)
+			// 	w.Write(<-c.send)
+			// }
 
 			if err := w.Close(); err != nil {
 				return
@@ -177,6 +177,12 @@ func (c *Client) processMessage(message []byte) {
 	case "save_document":
 		c.handleSaveDocument(msg)
 
+	case "typing_start":
+		c.handleTypingStart(msg)
+
+	case "typing_stop":
+		c.handleTypingStop(msg)
+
 	case "ping":
 		// Just a keepalive, no action needed
 		return
@@ -184,6 +190,63 @@ func (c *Client) processMessage(message []byte) {
 	default:
 		log.Printf("Unknown message type: %s", msg.Type)
 		c.sendError(fmt.Sprintf("Unknown message type: %s", msg.Type))
+	}
+}
+
+// Add new handler functions
+func (c *Client) handleTypingStart(msg Message) {
+	// Broadcast typing indicator to other users
+	msg.Data = map[string]interface{}{
+		"userId":   c.id,
+		"username": c.username,
+		"color":    c.color,
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling typing start: %v", err)
+		return
+	}
+
+	c.hub.broadcast <- data
+}
+
+func (c *Client) handleTypingStop(msg Message) {
+	// Broadcast typing stop to other users
+	msg.Data = map[string]interface{}{
+		"userId": c.id,
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling typing stop: %v", err)
+		return
+	}
+
+	c.hub.broadcast <- data
+}
+
+// Update the initialization message to include color
+func (c *Client) sendInitMessage() {
+	initMsg := Message{
+		Type:     "init",
+		ClientID: c.id,
+		Data: map[string]interface{}{
+			"username": c.username,
+			"color":    c.color,
+		},
+	}
+
+	data, err := json.Marshal(initMsg)
+	if err != nil {
+		log.Printf("Error marshaling init message: %v", err)
+		return
+	}
+
+	select {
+	case c.send <- data:
+	default:
+		// Client not ready
 	}
 }
 
@@ -212,6 +275,13 @@ func (c *Client) handleTextUpdate(msg Message) {
 
 	// Send through hub broadcast channel
 	c.hub.broadcast <- data
+
+	// Update metrics
+	if c.service != nil {
+		c.service.metrics.mu.Lock()
+		c.service.metrics.MessagesSent++
+		c.service.metrics.mu.Unlock()
+	}
 
 	log.Printf("Client %s sent text update for doc %s", c.id, c.documentID)
 }
