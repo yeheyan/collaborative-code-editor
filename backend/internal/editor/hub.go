@@ -64,19 +64,26 @@ func (h *Hub) run() {
 
 // handleRegister handles client registration
 func (h *Hub) handleRegister(client *Client) {
+	log.Printf("[HUB] Registering client %s for document %s", client.id, client.documentID)
+
 	h.clients[client] = true
 
-	// Add to document-specific tracking
 	if client.documentID != "" {
 		if h.documentClients[client.documentID] == nil {
 			h.documentClients[client.documentID] = make(map[*Client]bool)
 		}
 		h.documentClients[client.documentID][client] = true
+		log.Printf("[HUB] Document %s now has %d clients", client.documentID, len(h.documentClients[client.documentID]))
+
+		// List all clients in document
+		for c := range h.documentClients[client.documentID] {
+			log.Printf("[HUB]   - Client %s in document", c.id)
+		}
 	}
 
 	log.Printf("Client %s connected. Total clients: %d", client.id, len(h.clients))
 
-	// Notify other clients in the same document
+	// THIS IS THE KEY PART - notify others
 	if client.documentID != "" {
 		h.notifyUserJoined(client)
 	}
@@ -95,10 +102,10 @@ func (h *Hub) handleUnregister(client *Client) {
 			// Clean up empty document entries
 			if len(h.documentClients[client.documentID]) == 0 {
 				delete(h.documentClients, client.documentID)
+			} else {
+				// IMPORTANT: Notify remaining users
+				h.notifyUserLeft(client)
 			}
-
-			// Notify other clients in the same document
-			h.notifyUserLeft(client)
 		}
 
 		// Remove from service's document tracking
@@ -118,16 +125,22 @@ func (h *Hub) handleBroadcast(message []byte) {
 		return
 	}
 
+	log.Printf("[HUB] Broadcasting message type: %s from client: %s", msg.Type, msg.ClientID)
+
 	// Route message based on type
 	switch msg.Type {
-	case "text_update", "cursor_position", "selection":
+	case "text_update":
+		// For text updates, broadcast to all others in the document
 		h.broadcastToDocument(msg.DocumentID, message, msg.ClientID)
 
-	case "broadcast_all":
-		h.broadcastToAll(message, msg.ClientID)
+	case "cursor_position", "selection":
+		h.broadcastToDocument(msg.DocumentID, message, msg.ClientID)
+
+	case "typing_start", "typing_stop":
+		h.broadcastToDocument(msg.DocumentID, message, msg.ClientID)
 
 	default:
-		// Default behavior: broadcast to document
+		// Default: broadcast to document
 		if msg.DocumentID != "" {
 			h.broadcastToDocument(msg.DocumentID, message, msg.ClientID)
 		}
@@ -138,25 +151,27 @@ func (h *Hub) handleBroadcast(message []byte) {
 func (h *Hub) broadcastToDocument(docID string, message []byte, excludeClientID string) {
 	clients := h.documentClients[docID]
 	if clients == nil {
-		log.Printf("No clients for document %s", docID)
+		log.Printf("[HUB] No clients for document %s", docID)
 		return
 	}
 
-	log.Printf("Broadcasting to %d clients in doc %s (excluding %s)", len(clients), docID, excludeClientID)
-
+	sentCount := 0
 	for client := range clients {
 		if client.id != excludeClientID {
 			select {
 			case client.send <- message:
-				log.Printf("Sent message to client %s", client.id)
+				sentCount++
+				log.Printf("[HUB] Sent message to client %s", client.id)
 			default:
-				log.Printf("Client %s buffer full, closing", client.id)
+				log.Printf("[HUB] Client %s buffer full, closing", client.id)
 				close(client.send)
 				delete(h.clients, client)
 				delete(clients, client)
 			}
 		}
 	}
+
+	log.Printf("[HUB] Broadcast complete: sent to %d clients", sentCount)
 }
 
 // broadcastToAll sends a message to all connected clients
@@ -175,6 +190,9 @@ func (h *Hub) broadcastToAll(message []byte, excludeClientID string) {
 
 // notifyUserJoined notifies other users in a document that a new user joined
 func (h *Hub) notifyUserJoined(newClient *Client) {
+	log.Printf("[HUB] notifyUserJoined called for client %s", newClient.id)
+
+	// Send join notification
 	notification := Message{
 		Type:       "user_joined",
 		ClientID:   newClient.id,
@@ -182,7 +200,7 @@ func (h *Hub) notifyUserJoined(newClient *Client) {
 		Data: map[string]interface{}{
 			"userId":   newClient.id,
 			"username": newClient.username,
-			"color":    newClient.color, // For cursor color
+			"color":    newClient.color,
 		},
 	}
 
@@ -192,10 +210,53 @@ func (h *Hub) notifyUserJoined(newClient *Client) {
 		return
 	}
 
+	// Broadcast to other users
 	h.broadcastToDocument(newClient.documentID, data, newClient.id)
 
-	// Send list of active users to the new client
-	h.sendActiveUsers(newClient)
+	// CRITICAL: Send active users list to ALL users
+	h.sendActiveUsersToAll(newClient.documentID)
+}
+
+func (h *Hub) sendActiveUsersToAll(documentID string) {
+	log.Printf("[HUB] sendActiveUsersToAll called for document %s", documentID)
+
+	users := []map[string]interface{}{}
+
+	if clients := h.documentClients[documentID]; clients != nil {
+		log.Printf("[HUB] Found %d clients in document", len(clients))
+		for c := range clients {
+			users = append(users, map[string]interface{}{
+				"userId":   c.id,
+				"username": c.username,
+				"color":    c.color,
+			})
+			log.Printf("[HUB]   Adding user %s to list", c.id)
+		}
+	}
+
+	message := Message{
+		Type:       "active_users",
+		DocumentID: documentID,
+		Data:       users,
+	}
+
+	data, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Error marshaling active users: %v", err)
+		return
+	}
+
+	// Send to ALL clients
+	if clients := h.documentClients[documentID]; clients != nil {
+		for client := range clients {
+			select {
+			case client.send <- data:
+				log.Printf("[HUB] Sent active users list to client %s", client.id)
+			default:
+				log.Printf("[HUB] Failed to send to client %s (channel full)", client.id)
+			}
+		}
+	}
 }
 
 // notifyUserLeft notifies other users in a document that a user left
@@ -215,22 +276,25 @@ func (h *Hub) notifyUserLeft(leftClient *Client) {
 		return
 	}
 
+	// Broadcast to remaining users
 	h.broadcastToDocument(leftClient.documentID, data, leftClient.id)
+
+	// Update active users list for remaining users
+	h.sendActiveUsersToAll(leftClient.documentID)
 }
 
-// sendActiveUsers sends list of active users to a client
+// sendActiveUsers sends list of active users to a specific client (for initial connection)
 func (h *Hub) sendActiveUsers(client *Client) {
 	users := []map[string]interface{}{}
 
 	if clients := h.documentClients[client.documentID]; clients != nil {
 		for c := range clients {
-			if c.id != client.id {
-				users = append(users, map[string]interface{}{
-					"userId":   c.id,
-					"username": c.username,
-					"color":    c.color,
-				})
-			}
+			// Include ALL users (the frontend will handle displaying "others")
+			users = append(users, map[string]interface{}{
+				"userId":   c.id,
+				"username": c.username,
+				"color":    c.color,
+			})
 		}
 	}
 
@@ -247,6 +311,7 @@ func (h *Hub) sendActiveUsers(client *Client) {
 
 	select {
 	case client.send <- data:
+		log.Printf("Sent initial active users list to client %s", client.id)
 	default:
 		// Client not ready to receive
 	}

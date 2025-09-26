@@ -22,7 +22,7 @@ func main() {
 
 	// Create editor config
 	editorConfig := &editor.Config{
-		MaxMessageSize: 512 * 1024,        // 512KB
+		MaxMessageSize: 512 * 1024, // 512KB
 		WriteTimeout:   10 * time.Second,
 		ReadTimeout:    60 * time.Second,
 		PingInterval:   30 * time.Second,
@@ -31,29 +31,31 @@ func main() {
 
 	// Initialize the editor service
 	service := editor.NewService(editorConfig)
-	
+
 	// Start the service
 	if err := service.Start(); err != nil {
 		log.Fatalf("Failed to start service: %v", err)
 	}
-	
+
 	// Set up HTTP routes
 	mux := http.NewServeMux()
-	
+
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("healthy"))
 	})
-	
+
 	// WebSocket endpoint
 	mux.HandleFunc("/ws", service.HandleWebSocket)
-	
+
+	// Static files (in development only)
+	// In cmd/editor-service/main.go, update the static file serving:
+
 	// Static files (in development only)
 	if *env == "dev" {
-		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			http.ServeFile(w, r, "../frontend/public/index.html")
-		})
+		fileServer := http.FileServer(http.Dir("../frontend/public"))
+		mux.Handle("/", fileServer)
 	}
 
 	// Start server
@@ -75,7 +77,7 @@ func main() {
 
 	log.Printf("Editor service starting on port %s (env: %s)", *port, *env)
 	log.Println("Open http://localhost:" + *port + "/?doc=test-doc in multiple browsers")
-	
+
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed to start: %v", err)
 	}
