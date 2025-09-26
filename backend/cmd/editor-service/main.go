@@ -23,6 +23,7 @@ func main() {
 	// Create editor config
 	editorConfig := &editor.Config{
 		MaxMessageSize: 512 * 1024, // 512KB
+		MaxMessageSize: 512 * 1024, // 512KB
 		WriteTimeout:   10 * time.Second,
 		ReadTimeout:    60 * time.Second,
 		PingInterval:   30 * time.Second,
@@ -50,17 +51,18 @@ func main() {
 	mux.HandleFunc("/ws", service.HandleWebSocket)
 
 	// Static files (in development only)
-	// In cmd/editor-service/main.go, update the static file serving:
-
-	// Static files (in development only)
 	if *env == "dev" {
 		fileServer := http.FileServer(http.Dir("../frontend/public"))
 		mux.Handle("/", fileServer)
 	}
 
 	// Start server
+	// server := &http.Server{
+	// 	Addr:    ":" + *port,
+	// 	Handler: mux,
+	// }
 	server := &http.Server{
-		Addr:    ":" + *port,
+		Addr:    "0.0.0.0:" + *port, // Explicitly bind to all interfaces
 		Handler: mux,
 	}
 

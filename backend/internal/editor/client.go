@@ -126,6 +126,11 @@ func (c *Client) writePump() {
 			// 	w.Write(newline)
 			// 	w.Write(<-c.send)
 			// }
+			// n := len(c.send)
+			// for i := 0; i < n; i++ {
+			// 	w.Write(newline)
+			// 	w.Write(<-c.send)
+			// }
 
 			if err := w.Close(); err != nil {
 				return
@@ -176,6 +181,12 @@ func (c *Client) processMessage(message []byte) {
 
 	case "save_document":
 		c.handleSaveDocument(msg)
+
+	case "typing_start":
+		c.handleTypingStart(msg)
+
+	case "typing_stop":
+		c.handleTypingStop(msg)
 
 	case "typing_start":
 		c.handleTypingStart(msg)
@@ -250,23 +261,100 @@ func (c *Client) sendInitMessage() {
 	}
 }
 
+// Add new handler functions
+func (c *Client) handleTypingStart(msg Message) {
+	// Broadcast typing indicator to other users
+	msg.Data = map[string]interface{}{
+		"userId":   c.id,
+		"username": c.username,
+		"color":    c.color,
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling typing start: %v", err)
+		return
+	}
+
+	c.hub.broadcast <- data
+}
+
+func (c *Client) handleTypingStop(msg Message) {
+	// Broadcast typing stop to other users
+	msg.Data = map[string]interface{}{
+		"userId": c.id,
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling typing stop: %v", err)
+		return
+	}
+
+	c.hub.broadcast <- data
+}
+
+// Update the initialization message to include color
+func (c *Client) sendInitMessage() {
+	initMsg := Message{
+		Type:     "init",
+		ClientID: c.id,
+		Data: map[string]interface{}{
+			"username": c.username,
+			"color":    c.color,
+		},
+	}
+
+	data, err := json.Marshal(initMsg)
+	if err != nil {
+		log.Printf("Error marshaling init message: %v", err)
+		return
+	}
+
+	select {
+	case c.send <- data:
+	default:
+		// Client not ready
+	}
+}
+
 // handleTextUpdate handles text update messages
+// Update internal/editor/client.go handleTextUpdate
+
 func (c *Client) handleTextUpdate(msg Message) {
-	// Update document in service
+	log.Printf("[CLIENT] handleTextUpdate from %s, version %d", c.id, msg.Version)
+
+	// Extract version from message (default to 0 for backward compatibility)
+	clientVersion := 0
+	if msg.Version > 0 {
+		clientVersion = msg.Version
+	}
+
+	// Update document using OT
 	if c.service != nil {
-		err := c.service.UpdateDocument(c.documentID, msg.Content, msg.Version)
+		newContent, newVersion, err := c.service.UpdateDocument(
+			c.documentID,
+			msg.Content,
+			c.id,
+			clientVersion,
+		)
+
 		if err != nil {
 			log.Printf("Error updating document: %v", err)
 			c.sendError("Failed to update document")
 			return
 		}
+
+		// Update message with transformed content and new version
+		msg.Content = newContent
+		msg.Version = newVersion
 	}
 
-	// IMPORTANT: Set the client ID and document ID
+	// Add metadata
 	msg.ClientID = c.id
 	msg.DocumentID = c.documentID
 
-	// Broadcast to other clients
+	// Broadcast the transformed update to other clients
 	data, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("Error marshaling text update: %v", err)
@@ -276,14 +364,7 @@ func (c *Client) handleTextUpdate(msg Message) {
 	// Send through hub broadcast channel
 	c.hub.broadcast <- data
 
-	// Update metrics
-	if c.service != nil {
-		c.service.metrics.mu.Lock()
-		c.service.metrics.MessagesSent++
-		c.service.metrics.mu.Unlock()
-	}
-
-	log.Printf("Client %s sent text update for doc %s", c.id, c.documentID)
+	log.Printf("Client %s sent text update for doc %s (version %d)", c.id, c.documentID, msg.Version)
 }
 
 // handleCursorPosition handles cursor position updates

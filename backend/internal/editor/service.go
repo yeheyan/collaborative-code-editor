@@ -44,6 +44,7 @@ type Document struct {
 	CreatedAt time.Time `json:"created_at"`
 
 	// Track active editors
+	OTManager     *OTManager         `json:"-"`
 	ActiveClients map[string]*Client `json:"-"`
 	mu            sync.RWMutex       `json:"-"`
 }
@@ -195,6 +196,7 @@ func (s *Service) GetDocument(id string) (*Document, error) {
 			Version:       1,
 			CreatedAt:     time.Now(),
 			UpdatedAt:     time.Now(),
+			OTManager:     NewOTManager(id), // Initialize OT manager
 			ActiveClients: make(map[string]*Client),
 		}
 
@@ -212,27 +214,35 @@ func (s *Service) GetDocument(id string) (*Document, error) {
 }
 
 // UpdateDocument updates a document's content
-func (s *Service) UpdateDocument(id string, content string, version int) error {
+// In service.go - modify UpdateDocument to only handle text, not interfere with other messages
+func (s *Service) UpdateDocument(id string, content string, clientID string, clientVersion int) (string, int, error) {
 	doc, err := s.GetDocument(id)
 	if err != nil {
-		return err
+		return "", 0, err
 	}
 
+	// Use OT only for text updates
+	if doc.OTManager != nil {
+		newContent, newVersion, err := doc.OTManager.ProcessTextUpdate(clientID, content, clientVersion)
+		if err == nil {
+			doc.mu.Lock()
+			doc.Content = newContent
+			doc.Version = newVersion
+			doc.UpdatedAt = time.Now()
+			doc.mu.Unlock()
+			return newContent, newVersion, nil
+		}
+	}
+
+	// Fallback to simple versioning
 	doc.mu.Lock()
-	defer doc.mu.Unlock()
-
-	// Simple version check (will implement OT/CRDT later)
-	if doc.Version != version {
-		// Handle version conflict
-		log.Printf("Version conflict for document %s: expected %d, got %d", id, doc.Version, version)
-		// For now, just accept the change (last-write-wins)
-	}
-
 	doc.Content = content
 	doc.Version++
 	doc.UpdatedAt = time.Now()
+	newVersion := doc.Version
+	doc.mu.Unlock()
 
-	return nil
+	return content, newVersion, nil
 }
 
 // BroadcastToDocument sends a message to all clients editing a document
