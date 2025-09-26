@@ -23,7 +23,6 @@ func main() {
 	// Create editor config
 	editorConfig := &editor.Config{
 		MaxMessageSize: 512 * 1024, // 512KB
-		MaxMessageSize: 512 * 1024, // 512KB
 		WriteTimeout:   10 * time.Second,
 		ReadTimeout:    60 * time.Second,
 		PingInterval:   30 * time.Second,
@@ -57,12 +56,8 @@ func main() {
 	}
 
 	// Start server
-	// server := &http.Server{
-	// 	Addr:    ":" + *port,
-	// 	Handler: mux,
-	// }
 	server := &http.Server{
-		Addr:    "0.0.0.0:" + *port, // Explicitly bind to all interfaces
+		Addr:    ":" + *port,
 		Handler: mux,
 	}
 

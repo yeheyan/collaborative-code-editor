@@ -188,12 +188,6 @@ func (c *Client) processMessage(message []byte) {
 	case "typing_stop":
 		c.handleTypingStop(msg)
 
-	case "typing_start":
-		c.handleTypingStart(msg)
-
-	case "typing_stop":
-		c.handleTypingStop(msg)
-
 	case "ping":
 		// Just a keepalive, no action needed
 		return
@@ -261,66 +255,7 @@ func (c *Client) sendInitMessage() {
 	}
 }
 
-// Add new handler functions
-func (c *Client) handleTypingStart(msg Message) {
-	// Broadcast typing indicator to other users
-	msg.Data = map[string]interface{}{
-		"userId":   c.id,
-		"username": c.username,
-		"color":    c.color,
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Error marshaling typing start: %v", err)
-		return
-	}
-
-	c.hub.broadcast <- data
-}
-
-func (c *Client) handleTypingStop(msg Message) {
-	// Broadcast typing stop to other users
-	msg.Data = map[string]interface{}{
-		"userId": c.id,
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Error marshaling typing stop: %v", err)
-		return
-	}
-
-	c.hub.broadcast <- data
-}
-
-// Update the initialization message to include color
-func (c *Client) sendInitMessage() {
-	initMsg := Message{
-		Type:     "init",
-		ClientID: c.id,
-		Data: map[string]interface{}{
-			"username": c.username,
-			"color":    c.color,
-		},
-	}
-
-	data, err := json.Marshal(initMsg)
-	if err != nil {
-		log.Printf("Error marshaling init message: %v", err)
-		return
-	}
-
-	select {
-	case c.send <- data:
-	default:
-		// Client not ready
-	}
-}
-
 // handleTextUpdate handles text update messages
-// Update internal/editor/client.go handleTextUpdate
-
 func (c *Client) handleTextUpdate(msg Message) {
 	log.Printf("[CLIENT] handleTextUpdate from %s, version %d", c.id, msg.Version)
 
