@@ -50,9 +50,6 @@ func main() {
 	mux.HandleFunc("/ws", service.HandleWebSocket)
 
 	// Static files (in development only)
-	// In cmd/editor-service/main.go, update the static file serving:
-
-	// Static files (in development only)
 	if *env == "dev" {
 		fileServer := http.FileServer(http.Dir("../frontend/public"))
 		mux.Handle("/", fileServer)
