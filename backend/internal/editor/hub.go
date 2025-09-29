@@ -108,6 +108,27 @@ func (h *Hub) handleUnregister(client *Client) {
 			}
 		}
 
+		if client.service != nil {
+			doc, _ := client.service.GetDocument(client.documentID)
+			if doc != nil && doc.CursorManager != nil {
+				doc.CursorManager.RemoveClient(client.id)
+			}
+
+			// Send cursor_remove message to other clients
+			removeMsg := Message{
+				Type:       "cursor_remove",
+				ClientID:   client.id,
+				DocumentID: client.documentID,
+				Data: map[string]interface{}{
+					"clientId": client.id,
+				},
+			}
+
+			if data, err := json.Marshal(removeMsg); err == nil {
+				h.broadcastToDocument(client.documentID, data, client.id)
+			}
+		}
+
 		// Remove from service's document tracking
 		if client.service != nil {
 			client.service.RemoveClientFromDocument(client)

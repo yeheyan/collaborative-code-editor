@@ -54,16 +54,6 @@ type Client struct {
 	// User information
 	username string
 	color    string // For cursor color
-
-	// Position tracking
-	cursorPosition int
-	selection      *Selection
-}
-
-// Selection represents text selection
-type Selection struct {
-	Start int `json:"start"`
-	End   int `json:"end"`
 }
 
 // readPump pumps messages from the websocket connection to the hub
@@ -120,18 +110,6 @@ func (c *Client) writePump() {
 			}
 			w.Write(message)
 
-			// Add queued messages to the current websocket message
-			// n := len(c.send)
-			// for i := 0; i < n; i++ {
-			// 	w.Write(newline)
-			// 	w.Write(<-c.send)
-			// }
-			// n := len(c.send)
-			// for i := 0; i < n; i++ {
-			// 	w.Write(newline)
-			// 	w.Write(<-c.send)
-			// }
-
 			if err := w.Close(); err != nil {
 				return
 			}
@@ -170,12 +148,6 @@ func (c *Client) processMessage(message []byte) {
 	case "text_update":
 		c.handleTextUpdate(msg)
 
-	case "cursor_position":
-		c.handleCursorPosition(msg)
-
-	case "selection":
-		c.handleSelection(msg)
-
 	case "request_document":
 		c.handleDocumentRequest(msg)
 
@@ -187,6 +159,12 @@ func (c *Client) processMessage(message []byte) {
 
 	case "typing_stop":
 		c.handleTypingStop(msg)
+
+	case "cursor_position":
+		c.handleCursorPosition(msg)
+
+	case "selection_change":
+		c.handleSelectionChange(msg)
 
 	case "ping":
 		// Just a keepalive, no action needed
@@ -302,53 +280,6 @@ func (c *Client) handleTextUpdate(msg Message) {
 	log.Printf("Client %s sent text update for doc %s (version %d)", c.id, c.documentID, msg.Version)
 }
 
-// handleCursorPosition handles cursor position updates
-func (c *Client) handleCursorPosition(msg Message) {
-	c.cursorPosition = msg.Position
-
-	// Add user info to message
-	msg.Data = map[string]interface{}{
-		"userId":   c.id,
-		"username": c.username,
-		"color":    c.color,
-		"position": msg.Position,
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Error marshaling cursor position: %v", err)
-		return
-	}
-
-	c.hub.broadcast <- data
-}
-
-// handleSelection handles text selection updates
-func (c *Client) handleSelection(msg Message) {
-	if selData, ok := msg.Data.(map[string]interface{}); ok {
-		c.selection = &Selection{
-			Start: int(selData["start"].(float64)),
-			End:   int(selData["end"].(float64)),
-		}
-	}
-
-	// Add user info to message
-	msg.Data = map[string]interface{}{
-		"userId":    c.id,
-		"username":  c.username,
-		"color":     c.color,
-		"selection": c.selection,
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Error marshaling selection: %v", err)
-		return
-	}
-
-	c.hub.broadcast <- data
-}
-
 // handleDocumentRequest handles requests for document state
 func (c *Client) handleDocumentRequest(msg Message) {
 	if c.service != nil {
@@ -437,5 +368,122 @@ func NewClient(hub *Hub, conn *websocket.Conn, service *Service, documentID stri
 		service:    service,
 		username:   fmt.Sprintf("User-%s", clientID[:4]),
 		color:      color,
+	}
+}
+
+func (c *Client) handleCursorPosition(msg Message) {
+	log.Printf("[CLIENT] Cursor position from %s: %v", c.id, msg.Position)
+
+	// Extract position from message
+	position := 0
+	if pos, ok := msg.Data.(float64); ok {
+		position = int(pos)
+	} else if msg.Position > 0 {
+		position = msg.Position
+	}
+
+	// Update cursor position in document's cursor manager
+	if c.service != nil {
+		doc, err := c.service.GetDocument(c.documentID)
+		if err != nil {
+			log.Printf("Error getting document: %v", err)
+			return
+		}
+
+		// Initialize CursorManager if nil
+		if doc.CursorManager == nil {
+			doc.CursorManager = NewCursorManager()
+		}
+
+		doc.CursorManager.UpdateCursorPosition(c.id, c.username, c.color, position)
+	}
+
+	// Broadcast cursor position to other clients
+	cursorMsg := Message{
+		Type:       "cursor_position",
+		ClientID:   c.id,
+		DocumentID: c.documentID,
+		Data: map[string]interface{}{
+			"clientId": c.id,
+			"username": c.username,
+			"color":    c.color,
+			"position": position,
+		},
+	}
+
+	data, err := json.Marshal(cursorMsg)
+	if err != nil {
+		log.Printf("Error marshaling cursor position: %v", err)
+		return
+	}
+
+	c.hub.broadcast <- data
+}
+
+func (c *Client) handleSelectionChange(msg Message) {
+	log.Printf("[CLIENT] Selection change from %s", c.id)
+
+	// Extract selection range
+	start, end := 0, 0
+	if selection, ok := msg.Data.(map[string]interface{}); ok {
+		if s, ok := selection["start"].(float64); ok {
+			start = int(s)
+		}
+		if e, ok := selection["end"].(float64); ok {
+			end = int(e)
+		}
+	}
+
+	// Update selection in document's cursor manager
+	if c.service != nil {
+		doc, _ := c.service.GetDocument(c.documentID)
+		if doc.CursorManager != nil {
+			doc.CursorManager.UpdateSelection(c.id, c.username, c.color, start, end)
+		}
+	}
+
+	// Broadcast selection to other clients
+	selectionMsg := Message{
+		Type:       "selection_change",
+		ClientID:   c.id,
+		DocumentID: c.documentID,
+		Data: map[string]interface{}{
+			"clientId": c.id,
+			"username": c.username,
+			"color":    c.color,
+			"start":    start,
+			"end":      end,
+		},
+	}
+
+	data, err := json.Marshal(selectionMsg)
+	if err != nil {
+		log.Printf("Error marshaling selection: %v", err)
+		return
+	}
+
+	c.hub.broadcast <- data
+}
+
+// When client disconnects, remove their cursor
+func (c *Client) cleanup() {
+	if c.service != nil {
+		doc, _ := c.service.GetDocument(c.documentID)
+		if doc.CursorManager != nil {
+			doc.CursorManager.RemoveClient(c.id)
+
+			// Notify other clients to remove this cursor
+			removeMsg := Message{
+				Type:       "cursor_remove",
+				ClientID:   c.id,
+				DocumentID: c.documentID,
+				Data: map[string]interface{}{
+					"clientId": c.id,
+				},
+			}
+
+			data, _ := json.Marshal(removeMsg)
+			c.hub.broadcast <- data
+		}
 	}
 }

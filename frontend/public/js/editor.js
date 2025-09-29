@@ -1,5 +1,3 @@
-// Collaborative Editor JavaScript
-
 // State management
 const state = {
     wsUrl: null, // WebSocket URL
@@ -12,7 +10,9 @@ const state = {
     isUpdatingFromRemote: false, // Flag to prevent echoing updates
     reconnectAttempts: 0, // Reconnection attempts
     maxReconnectAttempts: 10, // Max reconnection attempts
-    reconnectDelay: 2000 // Initial delay for reconnection
+    reconnectDelay: 2000, // Initial delay for reconnection
+    remoteCursors: new Map(), // ADD THIS
+    remoteSelections: new Map(), // ADD THIS
 };
 
 // UI Elements
@@ -159,6 +159,15 @@ function handleMessage(msg) {
         case 'save_confirmation':
             handleSaveConfirmation(msg);
             break;
+        case 'cursor_position':
+            handleCursorPosition(msg);
+            break;
+        case 'selection_change':
+            handleSelectionChange(msg);
+            break;
+        case 'cursor_remove':
+            handleCursorRemove(msg);
+                break;
         default:
             console.warn('Unknown message type:', msg.type);
     }
@@ -415,7 +424,57 @@ function setupEventListeners() {
             }
         }, 500);
     });
+    trackCursorPosition();
+    console.log('Cursor tracking initialized');
 }
+
+function trackCursorPosition() {
+    const editor = elements.editor;
+
+    editor.addEventListener('click', () => {
+        console.log('Click detected, sending cursor position');
+        updateCursorPosition();
+    });
+
+    editor.addEventListener('keyup', () => {
+        updateCursorPosition();
+    });
+
+    editor.addEventListener('select', () => {
+        updateSelection();
+    });
+
+    editor.addEventListener('mouseup', () => {
+        updateSelection();
+    });
+}
+
+function updateCursorPosition() {
+    const position = elements.editor.selectionStart;
+
+    sendMessage({
+        type: 'cursor_position',
+        clientId: state.clientId,
+        documentId: state.documentId,
+        position: position
+    });
+}
+
+function updateSelection() {
+    const start = elements.editor.selectionStart;
+    const end = elements.editor.selectionEnd;
+
+    sendMessage({
+        type: 'selection_change',
+        clientId: state.clientId,
+        documentId: state.documentId,
+        data: {  // Changed from 'selection' to 'data'
+            start: start,
+            end: end
+        }
+    });
+}
+
 // Send message to server
 function sendMessage(msg) {
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
@@ -438,6 +497,174 @@ function saveDocument() {
         type: 'save_document',
         documentId: state.documentId,
         content: elements.editor.value
+    });
+}
+
+// Better position calculation using a mirror div
+function getPositionFromIndex(textarea, index) {
+    // Create invisible div with same styling as textarea
+    const mirror = document.createElement('div');
+    const computed = window.getComputedStyle(textarea);
+
+    // Copy styling
+    mirror.style.position = 'absolute';
+    mirror.style.visibility = 'hidden';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordWrap = 'break-word';
+    mirror.style.font = computed.font;
+    mirror.style.padding = computed.padding;
+    mirror.style.width = computed.width;
+
+    // Copy text up to cursor position
+    mirror.textContent = textarea.value.substring(0, index);
+    document.body.appendChild(mirror);
+
+    // Add a span at the cursor position
+    const span = document.createElement('span');
+    span.textContent = '|';
+    mirror.appendChild(span);
+
+    // Get position
+    const position = {
+        x: span.offsetLeft,
+        y: span.offsetTop
+    };
+
+    // Clean up
+    document.body.removeChild(mirror);
+
+    return position;
+}
+
+function displayRemoteCursors() {
+    const editor = elements.editor;
+
+    state.remoteCursors.forEach((cursor, clientId) => {
+        let cursorEl = document.getElementById(`cursor-${clientId}`);
+
+        if (!cursorEl) {
+            // Create cursor element
+            cursorEl = document.createElement('div');
+            cursorEl.id = `cursor-${clientId}`;
+            cursorEl.className = 'remote-cursor';
+            cursorEl.style.color = cursor.color;
+            cursorEl.setAttribute('data-username', cursor.username);
+
+            // Make sure editor has a wrapper for positioning
+            if (!editor.parentElement.classList.contains('editor-wrapper')) {
+                editor.parentElement.classList.add('editor-wrapper');
+            }
+            editor.parentElement.appendChild(cursorEl);
+        }
+
+        // Use the helper function here
+        const position = getPositionFromIndex(editor, cursor.position);
+        if (position) {
+            cursorEl.style.left = `${position.x}px`;
+            cursorEl.style.top = `${position.y}px`;
+        }
+    });
+}
+
+// Handle cursor position message
+function handleCursorPosition(msg) {
+    const data = msg.data;
+    if (data.clientId === state.clientId) return; // Ignore own cursor
+
+    console.log('Remote cursor update:', data);
+
+    // Store cursor position
+    state.remoteCursors.set(data.clientId, {
+        position: data.position,
+        username: data.username,
+        color: data.color
+    });
+
+    // Update display
+    displayRemoteCursors();
+}
+
+// Handle selection change message
+function handleSelectionChange(msg) {
+    const data = msg.data;
+    if (data.clientId === state.clientId) return;
+
+    console.log('Remote selection update:', data);
+
+    // Store selection
+    if (data.start === data.end) {
+        state.remoteSelections.delete(data.clientId);
+        // Remove the visual element immediately
+        const selectionEl = document.getElementById(`selection-${data.clientId}`);
+        if (selectionEl) {
+            selectionEl.remove();
+        }
+    } else {
+        state.remoteSelections.set(data.clientId, {
+            start: data.start,
+            end: data.end,
+            username: data.username,
+            color: data.color
+        });
+    }
+
+    // Update display
+    displayRemoteSelections();
+}
+
+// Handle cursor remove message
+function handleCursorRemove(msg) {
+    const clientId = msg.data.clientId;
+
+    // Remove cursor and selection
+    state.remoteCursors.delete(clientId);
+    state.remoteSelections.delete(clientId);
+
+    // Remove from display
+    const cursorEl = document.getElementById(`cursor-${clientId}`);
+    if (cursorEl) cursorEl.remove();
+
+    const selectionEl = document.getElementById(`selection-${clientId}`);
+    if (selectionEl) selectionEl.remove();
+}
+
+// Display remote selections
+function displayRemoteSelections() {
+    const editor = elements.editor;
+
+    state.remoteSelections.forEach((selection, clientId) => {
+        let selectionEl = document.getElementById(`selection-${clientId}`);
+
+        if (!selectionEl) {
+            selectionEl = document.createElement('div');
+            selectionEl.id = `selection-${clientId}`;
+            selectionEl.className = 'remote-selection';
+            selectionEl.style.backgroundColor = selection.color;
+
+            // Add to editor container, not parent
+            const container = editor.parentElement;
+            container.style.position = 'relative';
+            container.appendChild(selectionEl);
+        }
+
+        const startPos = getPositionFromIndex(editor, selection.start);
+        const endPos = getPositionFromIndex(editor, selection.end);
+
+        if (startPos && endPos) {
+            // For single line selection
+            if (startPos.y === endPos.y) {
+                selectionEl.style.left = `${startPos.x}px`;
+                selectionEl.style.top = `${startPos.y}px`;
+                selectionEl.style.width = `${endPos.x - startPos.x}px`;
+                selectionEl.style.height = '22px';
+            } else {
+                // For multi-line, just highlight from start to end of first line for now
+                selectionEl.style.left = `${startPos.x}px`;
+                selectionEl.style.top = `${startPos.y}px`;
+                selectionEl.style.width = '100px'; // Simplified
+                selectionEl.style.height = `${endPos.y - startPos.y + 22}px`;
+            }
+        }
     });
 }
 
