@@ -45,6 +45,7 @@ type Document struct {
 
 	// Track active editors
 	OTManager     *OTManager         `json:"-"`
+	CursorManager *CursorManager     `json:"-"`
 	ActiveClients map[string]*Client `json:"-"`
 	mu            sync.RWMutex       `json:"-"`
 }
@@ -197,6 +198,7 @@ func (s *Service) GetDocument(id string) (*Document, error) {
 			CreatedAt:     time.Now(),
 			UpdatedAt:     time.Now(),
 			OTManager:     NewOTManager(id), // Initialize OT manager
+			CursorManager: NewCursorManager(),
 			ActiveClients: make(map[string]*Client),
 		}
 
